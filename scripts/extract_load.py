@@ -53,7 +53,7 @@ def load_to_snowflake(data_list, table_name):
             user=snow_user,
             password=os.getenv('SNOW_PASS'),
             account=snow_account,
-            role='GITHUB_ACTIONS_ROLE',
+            role='ACCOUNTADMIN',
             warehouse='COMPUTE_WH',
             database='CRYPTO_DB',
             schema='RAW'
