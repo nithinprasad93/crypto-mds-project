@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: crypto_api
+    database: CRYPTO_DB
+    schema: RAW
+    tables:
+      - name: RAW_MARKET_DATA
+      - name: RAW_NEWS_DATA
