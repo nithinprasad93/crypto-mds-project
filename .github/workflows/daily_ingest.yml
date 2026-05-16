@@ -39,7 +39,7 @@ jobs:
             -H "Authorization: Token ${{ secrets.DBT_CLOUD_API_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"cause": "Triggered by GitHub Actions"}' \
-            https://cloud.getdbt.com/api/v2/accounts/${{ secrets.DBT_ACCOUNT_ID }}/jobs/${{ secrets.DBT_JOB_ID }}/run/
+            https://oh068.us1.dbt.com/api/v2/accounts/${{ secrets.DBT_ACCOUNT_ID }}/jobs/${{ secrets.DBT_JOB_ID }}/run/
 
       # --- STEP 3: REFRESH EVIDENCE VISUALIZATION ---
       # Once dbt finishes, we ping Vercel to fetch the fresh Snowflake tables
