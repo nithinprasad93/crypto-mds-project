@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -19,7 +20,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Run Python Ingest Script
         env:
           SNOW_ACCOUNT: ${{ secrets.SNOW_ACCOUNT }}
@@ -38,7 +39,6 @@ jobs:
           DBT_ACCOUNT_ID: ${{ secrets.DBT_ACCOUNT_ID }}
           DBT_JOB_ID: ${{ secrets.DBT_JOB_ID }}
         run: |
-          # Trigger the job and capture the run ID
           RUN_ID=$(curl -s -X POST \
             -H "Authorization: Token $DBT_TOKEN" \
             -H "Content-Type: application/json" \
@@ -48,12 +48,11 @@ jobs:
 
           echo "dbt run triggered. Run ID: $RUN_ID"
 
-          # Poll every 30 seconds until the run finishes
           while true; do
             STATUS=$(curl -s \
               -H "Authorization: Token $DBT_TOKEN" \
               "https://oh068.us1.dbt.com/api/v2/accounts/$DBT_ACCOUNT_ID/runs/$RUN_ID/" \
-              | python3 -c "import sys, json; d=json.load(sys.stdin)['data']; print(d['status_humanized'])")
+              | python3 -c "import sys, json; print(json.load(sys.stdin)['data']['status_humanized'])")
 
             echo "dbt run status: $STATUS"
 
@@ -68,8 +67,69 @@ jobs:
             sleep 30
           done
 
-      # --- STEP 3: REFRESH EVIDENCE VISUALIZATION ---
-      # Vercel only triggers after dbt confirms success above
-      - name: Trigger Vercel Dashboard Build
+      # --- STEP 3: TRIGGER VERCEL AND WAIT FOR DEPLOYMENT ---
+      - name: Trigger Vercel Dashboard Build and Wait
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
         run: |
-          curl -X POST ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+          # Trigger deployment via deploy hook and capture deployment ID
+          DEPLOY_ID=$(curl -s -X POST "${{ secrets.VERCEL_DEPLOY_HOOK_URL }}" \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['job']['id'])")
+
+          echo "Vercel deployment triggered. Deploy ID: $DEPLOY_ID"
+
+          # Poll every 15 seconds until deployment is ready or fails
+          while true; do
+            RESPONSE=$(curl -s \
+              -H "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v13/deployments/$DEPLOY_ID${VERCEL_TEAM_ID:+?teamId=$VERCEL_TEAM_ID}")
+
+            STATE=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('readyState', 'UNKNOWN'))")
+            echo "Vercel deployment state: $STATE"
+
+            if [ "$STATE" = "READY" ]; then
+              DEPLOY_URL=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('url', ''))")
+              echo "Vercel deployment live at: https://$DEPLOY_URL"
+              break
+            elif [ "$STATE" = "ERROR" ] || [ "$STATE" = "CANCELED" ]; then
+              echo "Vercel deployment failed with state: $STATE"
+              exit 1
+            fi
+
+            sleep 15
+          done
+
+      # --- STEP 4: NOTIFY ON SUCCESS ---
+      - name: Notify Slack - Success
+        if: success()
+        run: |
+          curl -s -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "text": ":white_check_mark: *Crypto Pipeline Succeeded*",
+              "attachments": [{
+                "color": "good",
+                "fields": [
+                  {"title": "Status", "value": "All steps completed successfully", "short": true},
+                  {"title": "Run", "value": "<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>", "short": true}
+                ]
+              }]
+            }'
+
+      # --- STEP 4: NOTIFY ON FAILURE ---
+      - name: Notify Slack - Failure
+        if: failure()
+        run: |
+          curl -s -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "text": ":x: *Crypto Pipeline Failed*",
+              "attachments": [{
+                "color": "danger",
+                "fields": [
+                  {"title": "Status", "value": "Pipeline failed — check the logs", "short": true},
+                  {"title": "Run", "value": "<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Failed Run>", "short": true}
+                ]
+              }]
+            }'
