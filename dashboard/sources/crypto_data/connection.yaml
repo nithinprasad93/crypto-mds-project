@@ -1,0 +1,14 @@
+# This file was automatically generated
+type: snowflake
+name: crypto_data
+options:
+  account: FVGNXPP-RR05620
+  authenticator: userpass
+  database: CRYPTO_DB
+  resultPrefetch: 2
+  role: ACCOUNTADMIN
+  schema: RAW
+  warehouse: COMPUTE_WH
+# Advanced Options, you probably don't want to change this
+buildOptions:
+  batchSize: 1000000
