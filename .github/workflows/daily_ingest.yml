@@ -31,18 +31,45 @@ jobs:
           pip install -r requirements.txt
           python scripts/extract_load.py
 
-      # --- STEP 2: TRIGGER dbt CORE / dbt CLOUD ---
-      # Option A: If you are using dbt Cloud, we call their API webhook to run the transformation
-      - name: Trigger dbt Cloud Job
+      # --- STEP 2: TRIGGER dbt CLOUD AND WAIT FOR COMPLETION ---
+      - name: Trigger dbt Cloud Job and Wait
+        env:
+          DBT_TOKEN: ${{ secrets.DBT_CLOUD_API_TOKEN }}
+          DBT_ACCOUNT_ID: ${{ secrets.DBT_ACCOUNT_ID }}
+          DBT_JOB_ID: ${{ secrets.DBT_JOB_ID }}
         run: |
-          curl -f -X POST \
-            -H "Authorization: Token ${{ secrets.DBT_CLOUD_API_TOKEN }}" \
+          # Trigger the job and capture the run ID
+          RUN_ID=$(curl -s -X POST \
+            -H "Authorization: Token $DBT_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"cause": "Triggered by GitHub Actions"}' \
-            https://oh068.us1.dbt.com/api/v2/accounts/${{ secrets.DBT_ACCOUNT_ID }}/jobs/${{ secrets.DBT_JOB_ID }}/run/
+            "https://oh068.us1.dbt.com/api/v2/accounts/$DBT_ACCOUNT_ID/jobs/$DBT_JOB_ID/run/" \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['data']['id'])")
+
+          echo "dbt run triggered. Run ID: $RUN_ID"
+
+          # Poll every 30 seconds until the run finishes
+          while true; do
+            STATUS=$(curl -s \
+              -H "Authorization: Token $DBT_TOKEN" \
+              "https://oh068.us1.dbt.com/api/v2/accounts/$DBT_ACCOUNT_ID/runs/$RUN_ID/" \
+              | python3 -c "import sys, json; d=json.load(sys.stdin)['data']; print(d['status_humanized'])")
+
+            echo "dbt run status: $STATUS"
+
+            if [ "$STATUS" = "Success" ]; then
+              echo "dbt job completed successfully."
+              break
+            elif [ "$STATUS" = "Error" ] || [ "$STATUS" = "Cancelled" ]; then
+              echo "dbt job failed with status: $STATUS"
+              exit 1
+            fi
+
+            sleep 30
+          done
 
       # --- STEP 3: REFRESH EVIDENCE VISUALIZATION ---
-      # Once dbt finishes, we ping Vercel to fetch the fresh Snowflake tables
+      # Vercel only triggers after dbt confirms success above
       - name: Trigger Vercel Dashboard Build
         run: |
           curl -X POST ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
