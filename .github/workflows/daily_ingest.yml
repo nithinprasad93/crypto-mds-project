@@ -35,8 +35,11 @@ jobs:
       # Option A: If you are using dbt Cloud, we call their API webhook to run the transformation
       - name: Trigger dbt Cloud Job
         run: |
-          curl -X POST -H "Authorization: Token ${{ secrets.DBT_CLOUD_API_TOKEN }}" \
-          https://cloud.getdbt.com/api/v2/accounts/${{ secrets.DBT_ACCOUNT_ID }}/jobs/${{ secrets.DBT_JOB_ID }}/runs/
+          curl -f -X POST \
+            -H "Authorization: Token ${{ secrets.DBT_CLOUD_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"cause": "Triggered by GitHub Actions"}' \
+            https://cloud.getdbt.com/api/v2/accounts/${{ secrets.DBT_ACCOUNT_ID }}/jobs/${{ secrets.DBT_JOB_ID }}/run/
 
       # --- STEP 3: REFRESH EVIDENCE VISUALIZATION ---
       # Once dbt finishes, we ping Vercel to fetch the fresh Snowflake tables
